@@ -1,46 +1,53 @@
 # AI Data Platform Mini（Label Studio 数据中台 / 分发与回收闭环）
 
 一个轻量的「数据中台」后端，用来对接自建/远程的 Label Studio（HumanSignal/label-studio），实现：
-	•	数据集（Dataset）管理（MVP：生成 100 条 demo 文本）
-	•	将数据批量导入 Label Studio 项目（异步 job + Celery）
-	•	中台维护 tasks “影子索引”（用于统计、分发、权限视角）
-	•	Admin 分配任务给标注员（单条 assign / 批量 auto_assign）
-	•	Annotator 只能看自己被分配的任务与统计
-	•	从 Label Studio 导出标注结果回写到中台（闭环），更新 labeled 统计与 label（OK/NG）
 
-技术栈
-	•	FastAPI + Uvicorn
-	•	Postgres（SQLAlchemy 2.0 / psycopg）
-	•	Redis（Celery broker / backend）
-	•	Celery（导入 / 导出异步任务）
-	•	requests（调用 Label Studio API）
-	•	JWT（python-jose）+ bcrypt（passlib）
+- 数据集（Dataset）管理（MVP：生成 100 条 demo 文本）
+- 将数据批量导入 Label Studio 项目（异步 job + Celery）
+- 中台维护 tasks “影子索引”（用于统计、分发、权限视角）
+- Admin 分配任务给标注员（单条 assign / 批量 auto_assign）
+- Annotator 只能看自己被分配的任务与统计
+- 从 Label Studio 导出标注结果回写到中台（闭环），更新 labeled 统计与 label（OK/NG）
 
-依赖版本：
-	•	fastapi==0.115.5
-	•	uvicorn[standard]==0.32.0
-	•	SQLAlchemy==2.0.36
-	•	psycopg[binary]==3.2.3
-	•	redis==5.2.0
-	•	python-jose==3.3.0
-	•	passlib[bcrypt]==1.7.4
-	•	requests==2.32.3
-	•	celery==5.4.0
+---
 
-⸻
+## 技术栈
 
-架构与服务
+- FastAPI + Uvicorn
+- Postgres（SQLAlchemy 2.0 / psycopg）
+- Redis（Celery broker / backend）
+- Celery（导入 / 导出异步任务）
+- requests（调用 Label Studio API）
+- JWT（python-jose）+ bcrypt（passlib）
 
-docker compose 一键启动四个服务：
-	•	db: Postgres 16
-	•	redis: Redis 7
-	•	api: FastAPI（端口 8000）
-	•	worker: Celery worker（执行 import/export job）
+### 依赖版本
 
-⸻
+- fastapi==0.115.5
+- uvicorn[standard]==0.32.0
+- SQLAlchemy==2.0.36
+- psycopg[binary]==3.2.3
+- redis==5.2.0
+- python-jose==3.3.0
+- passlib[bcrypt]==1.7.4
+- requests==2.32.3
+- celery==5.4.0
 
-目录结构
+---
 
+## 架构与服务
+
+`docker compose` 一键启动四个服务：
+
+- **db**: Postgres 16
+- **redis**: Redis 7
+- **api**: FastAPI（端口 8000）
+- **worker**: Celery worker（执行 import/export job）
+
+---
+
+## 目录结构
+
+```text
 .
 ├── docker-compose.yml
 ├── .env
@@ -69,7 +76,7 @@ docker compose 一键启动四个服务：
 
 环境变量（.env）
 
-你当前的 .env（示例 / 建议放 .env.example）：
+建议把真实 .env 放本地，仅提交 .env.example。
 
 # Database
 POSTGRES_DB=aiplatform
@@ -92,13 +99,11 @@ LS_PROJECT_ID=1
 
 ⸻
 
-docker-compose.yml
-
-关键点说明：
+docker-compose.yml 关键点
 	•	api 暴露 8000:8000
-	•	db/redis 都做了 healthcheck
+	•	db/redis 做了 healthcheck
 	•	api/worker 通过环境变量拼接 DATABASE_URL、Redis broker/backend
-	•	你已加上：
+	•	已加入：
 	•	CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: "true"（为 Celery 6 兼容做准备）
 
 ⸻
@@ -112,7 +117,7 @@ docker-compose.yml
 登录接口：
 	•	POST /auth/login
 
-返回：
+返回示例：
 
 {"access_token":"...","token_type":"bearer","role":"admin"}
 
@@ -139,9 +144,9 @@ curl -s http://localhost:8000/openapi.json | head -c 200 && echo
 
 ⸻
 
-终端命令使用手册（推荐直接复制粘贴）
+终端命令使用手册（复制即用）
 
-你用的是 zsh，记得：不要把 # 注释 写在同一条命令后面，否则会 command not found: #。
+你用的是 zsh：不要把 # 注释 写在同一条命令后面，否则会出现 command not found: #。
 
 0）登录拿 Token
 
@@ -171,7 +176,7 @@ curl -s http://localhost:8000/me -H "Authorization: Bearer $TOKEN_ANN" && echo
 
 ⸻
 
-1）Phase 2：创建数据集（生成 100 条 demo items）
+Phase 2：创建数据集（生成 100 条 demo items）
 
 创建 dataset：
 
@@ -180,7 +185,7 @@ curl -s -X POST "http://localhost:8000/datasets" \
   -H "Content-Type: application/json" \
   -d '{"name":"demo-dataset"}' && echo
 
-你会拿到 dataset_id，例如 3，保存：
+你会拿到 dataset_id（例如 3），保存：
 
 DATASET_ID=3
 
@@ -192,14 +197,14 @@ curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
 
 ⸻
 
-2）Phase 3：导入到 Label Studio（异步 job）
+Phase 3：导入到 Label Studio（异步 job）
 
 触发导入：
 
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/import_to_ls" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 
-返回 job_id，例如 4：
+返回 job_id（例如 4），查询 job：
 
 JOB_ID=4
 curl -s "http://localhost:8000/jobs/$JOB_ID" \
@@ -217,11 +222,11 @@ curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
 
 ⸻
 
-3）Phase 4：任务分配（单条 / 批量）
+Phase 4：任务分配（单条 / 批量）
 
 A）单条分配：POST /tasks/{task_id}/assign/{username}
 
-先从 DB 拿一个 task_id（取 dataset 里最小的一个）：
+先从 DB 拿一个 task_id：
 
 TASK_ID=$(docker compose exec -T db psql -U aiplatform -d aiplatform -t -c \
 "select id from tasks where dataset_id=$DATASET_ID order by id limit 1;" | tr -d '[:space:]')
@@ -237,7 +242,7 @@ B）批量自动分配：POST /datasets/{id}/auto_assign?username=ann&count=20
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/auto_assign?username=ann&count=20" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 
-C）annotator 只看自己任务
+C）annotator 只看自己任务 / stats
 
 任务列表：
 
@@ -252,7 +257,7 @@ curl -s "http://localhost:8000/annotator/stats?dataset_id=$DATASET_ID" \
 
 ⸻
 
-4）Phase 5：导出标注结果（闭环）
+Phase 5：导出标注结果（闭环）
 
 1）去 Label Studio UI 手动标注若干条（例如 4 条 OK/NG）
 2）中台触发导出：
@@ -260,7 +265,7 @@ curl -s "http://localhost:8000/annotator/stats?dataset_id=$DATASET_ID" \
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/export_from_ls" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 
-拿到 job_id，例如 7，查询 job：
+拿到 job_id（例如 7），查询 job：
 
 JOB_ID=7
 curl -s "http://localhost:8000/jobs/$JOB_ID" \
@@ -283,7 +288,7 @@ curl -s "http://localhost:8000/annotator/stats?dataset_id=$DATASET_ID" \
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 "select status, count(*) from tasks where dataset_id=$DATASET_ID group by status order by status;"
 
-以及查看标注 label（OK/NG）：
+查看标注 label（OK/NG）：
 
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 "select id, ls_task_id, status, assigned_to, label from tasks where dataset_id=$DATASET_ID and status='labeled' limit 20;"
@@ -292,14 +297,16 @@ docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 ⸻
 
 权限边界（RBAC）
-	•	admin：
+
+admin 能做什么
 	•	登录拿 token
 	•	创建 dataset
 	•	导入 LS（import_to_ls）
 	•	分配任务（assign / auto_assign）
 	•	导出 LS 结果（export_from_ls）
 	•	查 jobs、看全局 stats
-	•	annotator：
+
+annotator 能做什么
 	•	登录拿 token
 	•	只看自己任务：GET /annotator/tasks
 	•	只看自己 stats：GET /annotator/stats
@@ -311,18 +318,19 @@ docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 
 1）JSONDecodeError: Expecting value
 
-说明 curl 没拿到 JSON（服务没起来/连接失败/返回空）。先做：
+说明 curl 没拿到 JSON（服务没起来/连接失败/返回空）。
 
 curl -i http://localhost:8000/health
 docker compose ps
 docker compose logs --tail=200 api
 
-2）zsh: command not found: #
+2）zsh: command not found:
 
-不要把 # 注释 写在一条命令后面，注释独立成一行。
+不要把 # 注释 写在同一条命令后面，注释独立成一行。
 
 3）LS 导入/导出慢
 
 导出时 worker 可能会逐个拉 /api/tasks/{id}，100 条也能接受，但会慢一些；后续可以改成分页拉项目任务列表再过滤，或者并发请求。
 
 ⸻
+
