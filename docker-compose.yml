@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aiplatform}
+      POSTGRES_USER: ${POSTGRES_USER:-aiplatform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aiplatform_pass}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aiplatform} -d ${POSTGRES_DB:-aiplatform}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # 开发阶段如果你确实需要用宿主机直连数据库再打开；不需要就建议注释掉避免冲突
+    # ports:
+    #   - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # 开发阶段如果你确实需要宿主机直连 redis 再打开
+    # ports:
+    #   - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-aiplatform}:${POSTGRES_PASSWORD:-aiplatform_pass}@db:5432/${POSTGRES_DB:-aiplatform}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-aiplatform}:${POSTGRES_PASSWORD:-aiplatform_pass}@db:5432/${POSTGRES_DB:-aiplatform}"
+      REDIS_URL: "redis://redis:6379/0"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+volumes:
+  pg_data:
+  redis_data:

@@ -1,0 +1,20 @@
+# env
+.env
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# mac
+.DS_Store
+
+# docker volumes (if you ever map them to local folders)
+pg_data/
+redis_data/
+
+# logs
+*.log
