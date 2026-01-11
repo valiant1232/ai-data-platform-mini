@@ -79,9 +79,9 @@
 ## 配置
 
 ### 环境变量（.env）
-
+```
 cp .env.example .env
-
+```
 ```env
 # Database
 POSTGRES_DB=aiplatform
