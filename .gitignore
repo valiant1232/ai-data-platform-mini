@@ -18,3 +18,9 @@ redis_data/
 
 # logs
 *.log
+
+# web (vite/react)
+web/node_modules/
+web/dist/
+web/.env
+web/.env.*
