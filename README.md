@@ -80,7 +80,7 @@
 
 ### 环境变量（.env）
 
-建议把真实 `.env` 放本地，仅提交 `.env.example`。
+cp .env.example .env
 
 ```env
 # Database
