@@ -1,48 +1,48 @@
-# AI Data Platform Mini - Label Studio 数据中台
+# AI Data Platform Mini - Label Studio Data Hub
 
-## 项目简介
+## Project Overview
 
-一个轻量的「数据中台」后端，用来对接自建/远程的 Label Studio（HumanSignal/label-studio），实现：
+A lightweight "Data Hub" backend used to connect to a self-hosted/remote Label Studio (HumanSignal/label-studio), achieving the following:
 
-- 数据集（Dataset）管理（MVP：生成 100 条 demo 文本）
-- 将数据批量导入 Label Studio 项目（异步 job + Celery）
-- 中台维护 tasks “影子索引”（用于统计、分发、权限视角）
-- Admin 分配任务给标注员（单条 assign / 批量 auto_assign）
-- Annotator 只能看自己被分配的任务与统计
-- 从 Label Studio 导出标注结果回写到中台（闭环），更新 labeled 统计与 label（OK/NG）
+- Dataset management (MVP: generate 100 demo text items)
+- Batch import data into Label Studio projects (async job + Celery)
+- The Data Hub maintains a "shadow index" of tasks (for statistics, distribution, and permission views)
+- Admin assigns tasks to annotators (single `assign` / batch `auto_assign`)
+- Annotators can only view their assigned tasks and personal statistics
+- Export annotation results from Label Studio and write them back to the Data Hub (closed-loop), updating `labeled` statistics and labels (OK/NG)
 
 ---
 
 ## v0.31-prelabel
 
-- 任务类型：文本二分类（OK / NG）
-- 实现方式：中台后端调用 Ollama 推理，把预测结果写回 Label Studio 的 **Prediction**（标注员打开任务就能看到预测）
-- 效果：标注员只需确认/修正 → 提升标注效率
+- **Task Type**: Text binary classification (OK / NG)
+- **Implementation**: The Data Hub backend calls Ollama for inference and writes the predicted results back to the Label Studio **Prediction** (annotators will see the prediction upon opening the task).
+- **Effect**: Annotators only need to confirm/correct → improves annotation efficiency.
 
-### 不确定度与优先级定义
+### Uncertainty and Priority Definition
 
 - `model_prob = confidence`
 - `uncertainty_score = 1 - confidence`
 - `priority = int(uncertainty_score * 1000)`
 
-### 预标注与 Active Learning 闭环
+### Pre-labeling & Active Learning Closed-Loop
 
-- 后端异步打分：对未标注样本批量推理 + 计算不确定度 + 写回数据库 + 可写回 LS Prediction
-- 提供高优先级任务列表：按 `priority desc` 返回（难样本优先）
-- `auto_assign` 优先分配高不确定样本：实现“难样本优先标注”的闭环
+- **Backend asynchronous scoring**: Batch inference on unlabeled samples + uncertainty calculation + write back to database + optionally write back to LS Prediction.
+- **Provide high-priority task lists**: Returned in `priority desc` order (hard samples first).
+- **`auto_assign` prioritizes high-uncertainty samples**: Achieving the closed-loop of "prioritizing hard samples for annotation."
 
 ---
 
-## 技术栈
+## Tech Stack
 
 - FastAPI + Uvicorn
-- Postgres（SQLAlchemy 2.0 / psycopg）
-- Redis（Celery broker / backend）
-- Celery（导入 / 导出 / 预标注 / 打分异步任务）
-- requests / urllib（调用 Label Studio API / Ollama API）
-- JWT（python-jose）+ bcrypt（passlib）
+- Postgres (SQLAlchemy 2.0 / psycopg)
+- Redis (Celery broker / backend)
+- Celery (Import / export / prelabel / score async tasks)
+- requests / urllib (Calling Label Studio API / Ollama API)
+- JWT (python-jose) + bcrypt (passlib)
 
-### 依赖版本
+### Dependency Versions
 
 - fastapi==0.115.5
 - uvicorn[standard]==0.32.0
@@ -56,18 +56,18 @@
 
 ---
 
-## 架构与服务
+## Architecture & Services
 
-使用 `docker compose` 一键启动四个服务：
+Use `docker compose` to start four services with one click:
 
 - **db**: Postgres 16
 - **redis**: Redis 7
-- **api**: FastAPI（端口 8000）
-- **worker**: Celery worker（执行 import/export/prelabel/score job）
+- **api**: FastAPI (Port 8000)
+- **worker**: Celery worker (Executes import/export/prelabel/score jobs)
 
 ---
 
-## 目录结构
+## Directory Structure
 
 ```text
 .
@@ -96,17 +96,17 @@
 
 ---
 
-## 配置
+## Configuration
 
-### 环境变量（.env）
+### Environment Variables (.env)
 
-#### 从模板复制
+#### Copy from template
 
 ```bash
 cp .env.example .env
 ```
 
-#### 示例 `.env`（请按实际改）
+#### Example `.env` (Modify according to your actual setup)
 
 ```env
 # Database
@@ -129,58 +129,58 @@ OLLAMA_MODEL=llama3.2:1b
 OLLAMA_TIMEOUT=120
 ```
 
-#### 字段说明
+#### Field Descriptions
 
-- `LS_BASE_URL`：Label Studio 服务地址（支持 https）
-- `LS_PROJECT_ID`：你在 Label Studio 中手动创建的项目 ID
-- `LS_API_TOKEN`：Label Studio 的 API Token（或 refresh token，按你当前实现）
-- `OLLAMA_BASE_URL`：Ollama HTTP 服务地址  
-  - Mac / Windows Docker：推荐 `http://host.docker.internal:11434`  
-  - Linux Docker：需改成宿主机 IP（如 `http://172.17.0.1:11434` 或实际网卡 IP）
-- `OLLAMA_MODEL`：要调用的模型名（例：`llama3.2:1b`）
-- `OLLAMA_TIMEOUT`：推理超时时间（秒）
-
----
-
-## “中台影子索引”是什么？
-
-- Label Studio 是“标注真源”：任务、预测、标注都在 LS 里可视化管理
-- 中台 DB 是“影子索引 / 缓存层”：保存 dataset / tasks / jobs 这些结构化信息，用于：
-  - 权限视角（annotator 只能看到自己分配的任务）
-  - 统计、分发、排序（priority / uncertainty）
-  - 与 LS 的导入/导出/预标注/打分流程解耦（异步队列）
-
-### 典型链路
-
-- 导入：先把数据写入中台 dataset → 再导入 LS → 回写 `ls_task_id` 到中台 tasks
-- 删除：如果要彻底删干净，一般需要“中台 DB 删除 + LS 任务删除”两边都做
-- 本项目中：导入 / 导出 / 预标注 / 打分 / 分配 都通过中台 API 统一入口完成
+- `LS_BASE_URL`: Label Studio service address (supports https)
+- `LS_PROJECT_ID`: The Project ID you manually created in Label Studio
+- `LS_API_TOKEN`: Label Studio API Token (or refresh token, depending on your implementation)
+- `OLLAMA_BASE_URL`: Ollama HTTP service address  
+  - Mac / Windows Docker: Recommended `http://host.docker.internal:11434`  
+  - Linux Docker: Needs to be changed to the host IP (e.g., `http://172.17.0.1:11434` or actual NIC IP)
+- `OLLAMA_MODEL`: Target model name (e.g., `llama3.2:1b`)
+- `OLLAMA_TIMEOUT`: Inference timeout (seconds)
 
 ---
 
-## docker-compose.yml 关键点
+## What is the "Data Hub Shadow Index"?
 
-- api 暴露 `8000:8000`
-- db / redis 做了 healthcheck
-- api / worker 通过环境变量拼接 `DATABASE_URL`、Redis broker/backend
-- 已加入：`CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: "true"`（为 Celery 6 兼容做准备）
+- **Label Studio is the "Single Source of Truth"**: Tasks, predictions, and annotations are visually managed within LS.
+- **Data Hub DB is the "Shadow Index / Cache Layer"**: It stores structural information like datasets / tasks / jobs, used for:
+  - Permission viewing (annotators can only see tasks assigned to them).
+  - Statistics, distribution, and sorting (priority / uncertainty).
+  - Decoupling from LS import/export/prelabel/scoring workflows (async queues).
+
+### Typical Data Flow
+
+- **Import**: First, write data into the Data Hub dataset → then import into LS → write back `ls_task_id` to Data Hub tasks.
+- **Deletion**: To completely delete, it generally requires both "Data Hub DB deletion + LS task deletion".
+- **In this project**: Import / export / prelabel / score / assign are all handled through unified Data Hub API endpoints.
 
 ---
 
-## 账号与认证
+## Key Points in docker-compose.yml
 
-### 默认账号（MVP：内存用户表）
+- `api` exposes `8000:8000`
+- `db` / `redis` have configured healthchecks
+- `api` / `worker` construct the `DATABASE_URL` and Redis broker/backend via environment variables
+- Added: `CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP: "true"` (Preparing for Celery 6 compatibility)
 
-当前账号写死在 `app/routers/auth.py`（MVP 用内存 users 表跑通概念）：
+---
 
-- admin：`admin / admin123`（role=admin）
-- annotator：`ann / ann123`（role=annotator）
+## Accounts & Authentication
 
-### 登录接口
+### Default Accounts (MVP: In-memory user table)
+
+Currently, accounts are hardcoded in `app/routers/auth.py` (MVP runs the concept using an in-memory users table):
+
+- admin: `admin / admin123` (role=admin)
+- annotator: `ann / ann123` (role=annotator)
+
+### Login Endpoint
 
 - `POST /auth/login`
 
-#### 返回示例
+#### Response Example
 
 ```json
 {"access_token":"...","token_type":"bearer","role":"admin"}
@@ -188,24 +188,24 @@ OLLAMA_TIMEOUT=120
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 1）启动服务
+### 1) Start Services
 
 ```bash
 docker compose up -d --build
 docker compose ps
 ```
 
-### 2）健康检查与 OpenAPI
+### 2) Health Check & OpenAPI
 
-#### 健康检查
+#### Health Check
 
 ```bash
 curl -s http://localhost:8000/health && echo
 ```
 
-#### 查看 OpenAPI（确认 API 已加载）
+#### View OpenAPI (Confirm API has loaded)
 
 ```bash
 curl -s http://localhost:8000/openapi.json | head -c 200 && echo
@@ -213,17 +213,17 @@ curl -s http://localhost:8000/openapi.json | head -c 200 && echo
 
 ---
 
-## 终端命令使用手册（复制即用）
+## Terminal Command Guide (Copy & Paste to Use)
 
-### zsh 注意事项
+### zsh Notes
 
-你用的是 zsh：不要把 `# 注释` 写在同一条命令后面，否则会出现 `command not found: #`。
+Since you are using zsh: Do not put `# comments` on the same line after a command, otherwise, you will get a `command not found: #` error.
 
 ---
 
-## Phase 0：登录拿 Token
+## Phase 0: Login and Get Token
 
-### admin
+### Admin
 
 ```bash
 TOKEN_ADMIN=$(curl -s http://localhost:8000/auth/login \
@@ -234,7 +234,7 @@ TOKEN_ADMIN=$(curl -s http://localhost:8000/auth/login \
 echo "TOKEN_ADMIN len=${#TOKEN_ADMIN}"
 ```
 
-### annotator（ann）
+### Annotator (ann)
 
 ```bash
 TOKEN_ANN=$(curl -s http://localhost:8000/auth/login \
@@ -245,7 +245,7 @@ TOKEN_ANN=$(curl -s http://localhost:8000/auth/login \
 echo "TOKEN_ANN len=${#TOKEN_ANN}"
 ```
 
-### 验证身份
+### Verify Identity
 
 ```bash
 curl -s http://localhost:8000/me -H "Authorization: Bearer $TOKEN_ADMIN" && echo
@@ -254,9 +254,9 @@ curl -s http://localhost:8000/me -H "Authorization: Bearer $TOKEN_ANN" && echo
 
 ---
 
-## Phase 2：创建数据集（生成 100 条 demo items）
+## Phase 2: Create Dataset (Generate 100 demo items)
 
-### 创建 dataset
+### Create dataset
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets" \
@@ -265,15 +265,15 @@ curl -s -X POST "http://localhost:8000/datasets" \
   -d '{"name":"demo-dataset"}' && echo
 ```
 
-### 保存 dataset_id
+### Save dataset_id
 
-你会拿到 `dataset_id`（例如 3），保存：
+You will receive a `dataset_id` (e.g., 3). Save it:
 
 ```bash
 DATASET_ID=3
 ```
 
-### 查看全局 stats
+### View global stats
 
 ```bash
 curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
@@ -282,18 +282,18 @@ curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
 
 ---
 
-## Phase 3：导入到 Label Studio（异步 job）
+## Phase 3: Import to Label Studio (Async Job)
 
-### 触发导入
+### Trigger import
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/import_to_ls" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### 查询 job
+### Query job
 
-返回 `job_id`（例如 4），查询 job：
+Returns a `job_id` (e.g., 4). Query the job:
 
 ```bash
 JOB_ID=4
@@ -301,15 +301,15 @@ curl -s "http://localhost:8000/jobs/$JOB_ID" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### 成功示例
+### Success Example
 
 ```json
 {"status":"success","message":"imported 100 tasks"}
 ```
 
-### 校验导入结果
+### Verify Import Results
 
-此时 Label Studio 项目里应出现 100 条任务；中台侧 stats：
+At this point, 100 tasks should appear in the Label Studio project. Data Hub side stats:
 
 ```bash
 curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
@@ -318,11 +318,11 @@ curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
 
 ---
 
-## Phase 4：任务分配（单条 / 批量）
+## Phase 4: Task Assignment (Single / Batch)
 
-### A）单条分配：POST /tasks/{task_id}/assign/{username}
+### A) Single Assignment: POST /tasks/{task_id}/assign/{username}
 
-先从 DB 拿一个 `task_id`：
+First, get a `task_id` from the DB:
 
 ```bash
 TASK_ID=$(docker compose exec -T db psql -U aiplatform -d aiplatform -t -c \
@@ -330,30 +330,30 @@ TASK_ID=$(docker compose exec -T db psql -U aiplatform -d aiplatform -t -c \
 echo "TASK_ID=$TASK_ID"
 ```
 
-分配给 ann：
+Assign to ann:
 
 ```bash
 curl -s -X POST "http://localhost:8000/tasks/$TASK_ID/assign/ann" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### B）批量自动分配：POST /datasets/{id}/auto_assign?username=ann&count=20
+### B) Batch Auto-Assignment: POST /datasets/{id}/auto_assign?username=ann&count=20
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/auto_assign?username=ann&count=20" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### C）annotator 只看自己任务 / stats
+### C) Annotator Only Sees Own Tasks / Stats
 
-#### 任务列表
+#### Task List
 
 ```bash
 curl -s "http://localhost:8000/annotator/tasks?dataset_id=$DATASET_ID&status=imported&limit=50" \
   -H "Authorization: Bearer $TOKEN_ANN" && echo
 ```
 
-#### 标注员 stats
+#### Annotator Stats
 
 ```bash
 curl -s "http://localhost:8000/annotator/stats?dataset_id=$DATASET_ID" \
@@ -362,22 +362,22 @@ curl -s "http://localhost:8000/annotator/stats?dataset_id=$DATASET_ID" \
 
 ---
 
-## Phase 5：导出标注结果（闭环）
+## Phase 5: Export Annotation Results (Closed-Loop)
 
-### 1）在 Label Studio UI 标注
+### 1) Annotate in Label Studio UI
 
-去 Label Studio UI 手动标注若干条（例如 4 条 OK/NG）。
+Go to the Label Studio UI and manually annotate a few items (e.g., 4 OK/NG tasks).
 
-### 2）中台触发导出
+### 2) Trigger Export from Data Hub
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/export_from_ls" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### 3）查询 job
+### 3) Query job
 
-拿到 `job_id`（例如 7），查询 job：
+Get the `job_id` (e.g., 7). Query the job:
 
 ```bash
 JOB_ID=7
@@ -385,15 +385,15 @@ curl -s "http://localhost:8000/jobs/$JOB_ID" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### 成功示例
+### Success Example
 
 ```json
 {"status":"success","message":"exported 4 labeled tasks"}
 ```
 
-### 4）查看统计与 DB 验证
+### 4) View Statistics and DB Verification
 
-查看全局 stats 与个人 stats：
+Check global stats and personal stats:
 
 ```bash
 curl -s "http://localhost:8000/datasets/$DATASET_ID/stats" \
@@ -403,14 +403,14 @@ curl -s "http://localhost:8000/annotator/stats?dataset_id=$DATASET_ID" \
   -H "Authorization: Bearer $TOKEN_ANN" && echo
 ```
 
-（可选）从 DB 验证 labeled：
+(Optional) Verify labeled status from the DB:
 
 ```bash
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 "select status, count(*) from tasks where dataset_id=$DATASET_ID group by status order by status;"
 ```
 
-查看标注 label（OK/NG）：
+View annotation labels (OK/NG):
 
 ```bash
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
@@ -419,42 +419,42 @@ docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 
 ---
 
-## Phase 6（Project 3.1）：AI 预标注（把预测写回 Label Studio）
+## Phase 6 (Project 3.1): AI Pre-labeling (Write Predictions Back to Label Studio)
 
-### 前置：确保宿主机 Ollama 可用
+### Prerequisite: Ensure Host Ollama is Available
 
-宿主机启动（示例）：
+Start on host (Example):
 
 ```bash
 ollama serve
 ```
 
-拉取模型（示例）：
+Pull model (Example):
 
 ```bash
 ollama pull llama3.2:1b
 ```
 
-宿主机验证：
+Verify on host:
 
 ```bash
 curl -s http://127.0.0.1:11434/api/tags | head -c 200 && echo
 ```
 
-### 触发预标注（异步 job）
+### Trigger Pre-labeling (Async Job)
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/prelabel" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-返回示例：
+Response Example:
 
 ```json
 {"job_id":13,"status":"queued"}
 ```
 
-### 查询 job
+### Query job
 
 ```bash
 JOB_ID=13
@@ -462,20 +462,20 @@ curl -s "http://localhost:8000/jobs/$JOB_ID" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-成功示例（message 可能略不同）：
+Success Example (message may vary slightly):
 
 ```json
 {"status":"success","message":"prelabeled 100 tasks; wrote 100 predictions"}
 ```
 
-### DB 验证（是否写入了 prelabel 字段）
+### DB Verification (Check if prelabel fields are written)
 
 ```bash
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 "select count(*) as prelabeled from tasks where dataset_id=$DATASET_ID and prelabel_json is not null;"
 ```
 
-查看前 10 条：
+View the top 10 records:
 
 ```bash
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
@@ -484,22 +484,22 @@ docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 
 ---
 
-## Phase 7（Project 3.2）：不确定度打分 + 优先级排序（Active Learning）
+## Phase 7 (Project 3.2): Uncertainty Scoring + Priority Sorting (Active Learning)
 
-### 触发打分（异步 job）
+### Trigger Scoring (Async Job)
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/score_uncertainty?limit=100&only_unlabeled=true" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-返回示例：
+Response Example:
 
 ```json
 {"job_id":11,"status":"queued"}
 ```
 
-### 查询 job
+### Query job
 
 ```bash
 JOB_ID=11
@@ -507,7 +507,7 @@ curl -s "http://localhost:8000/jobs/$JOB_ID" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-### DB 验证（是否写入 model_prob / uncertainty_score / priority）
+### DB Verification (Check if model_prob / uncertainty_score / priority are written)
 
 ```bash
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
@@ -518,14 +518,14 @@ docker compose exec -T db psql -U aiplatform -d aiplatform -c \
  limit 10;"
 ```
 
-### 获取高优先级任务列表（API）
+### Get High Priority Task List (API)
 
 ```bash
 curl -s "http://localhost:8000/datasets/$DATASET_ID/priority_tasks?limit=10" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-返回字段包含：
+Returned fields include:
 
 - `task_id`
 - `ls_task_id`
@@ -537,16 +537,16 @@ curl -s "http://localhost:8000/datasets/$DATASET_ID/priority_tasks?limit=10" \
 
 ---
 
-## Phase 8（Project 3.2）：优先分配（auto_assign 按 priority desc）
+## Phase 8 (Project 3.2): Priority Assignment (auto_assign by priority desc)
 
-把最不确定的样本优先分配给标注员（加分点）：
+Prioritize assigning the most uncertain samples to annotators (Bonus Feature):
 
 ```bash
 curl -s -X POST "http://localhost:8000/datasets/$DATASET_ID/auto_assign?username=ann&count=5" \
   -H "Authorization: Bearer $TOKEN_ADMIN" && echo
 ```
 
-DB 验证（看看最高 priority 的是否先 assigned_to=ann）：
+DB Verification (Check if the highest priority tasks are assigned to ann first):
 
 ```bash
 docker compose exec -T db psql -U aiplatform -d aiplatform -c \
@@ -559,57 +559,57 @@ docker compose exec -T db psql -U aiplatform -d aiplatform -c \
 
 ---
 
-## Ollama 是怎么和中台连接的？
+## How Does Ollama Connect to the Data Hub?
 
-### 配置入口
+### Configuration Entry
 
-`.env`：
+`.env`:
 
 - `OLLAMA_BASE_URL`
 - `OLLAMA_MODEL`
 - `OLLAMA_TIMEOUT`
 
-### 调用逻辑
+### Call Logic
 
-后端代码（通常在 `app/celery_app.py`）：
+Backend code (usually in `app/celery_app.py`):
 
-- 从环境变量读取 base_url / model / timeout
-- Celery worker 调用 Ollama API：`POST /api/generate`
+- Reads base_url / model / timeout from environment variables
+- Celery worker calls the Ollama API: `POST /api/generate`
 
-### Docker 里访问宿主机 Ollama
+### Accessing Host Ollama from Docker
 
-- Mac/Windows：`host.docker.internal` 由 Docker Desktop 提供
-- Linux：需要改为宿主机可达 IP（否则 worker 会连不上）
-
----
-
-## 权限边界（RBAC）
-
-### admin 能做什么
-
-- 登录拿 token
-- 创建 dataset
-- 导入 LS（import_to_ls）
-- 分配任务（assign / auto_assign）
-- 导出 LS 结果（export_from_ls）
-- 预标注（prelabel）
-- 打分排序（score_uncertainty / priority_tasks）
-- 查 jobs、看全局 stats
-
-### annotator 能做什么
-
-- 登录拿 token
-- 只看自己任务：`GET /annotator/tasks`
-- 只看自己 stats：`GET /annotator/stats`
-- 不能导入、不能分配、不能看别人的任务
+- Mac/Windows: `host.docker.internal` is provided by Docker Desktop
+- Linux: Needs to be changed to a host-reachable IP (otherwise the worker cannot connect)
 
 ---
 
-## 常见问题排查
+## Permission Boundaries (RBAC)
 
-### 1）JSONDecodeError: Expecting value
+### What Admin Can Do
 
-说明 curl 没拿到 JSON（服务没起来 / 连接失败 / 返回空）。
+- Login to get token
+- Create dataset
+- Import to LS (`import_to_ls`)
+- Assign tasks (`assign` / `auto_assign`)
+- Export LS results (`export_from_ls`)
+- Pre-labeling (`prelabel`)
+- Score and sort (`score_uncertainty` / `priority_tasks`)
+- Query jobs, view global stats
+
+### What Annotator Can Do
+
+- Login to get token
+- Only view own tasks: `GET /annotator/tasks`
+- Only view own stats: `GET /annotator/stats`
+- Cannot import, cannot assign, cannot view others' tasks
+
+---
+
+## Common Troubleshooting
+
+### 1) JSONDecodeError: Expecting value
+
+This means curl did not receive JSON (Service not running / connection failed / returned empty).
 
 ```bash
 curl -i http://localhost:8000/health
@@ -617,15 +617,15 @@ docker compose ps
 docker compose logs --tail=200 api
 ```
 
-### 2）LS 导入/导出慢
+### 2) LS Import/Export is Slow
 
-导出时 worker 可能会逐个拉 `/api/tasks/{id}`，100 条也能接受，但会慢一些；后续可以改成分页拉项目任务列表再过滤，或者并发请求。
+During export, the worker might fetch `/api/tasks/{id}` one by one. For 100 items, this is acceptable but somewhat slow. Future improvements could include paginating project task lists for filtering or using concurrent requests.
 
-### 3）worker 连不上 Ollama（常见于 Linux）
+### 3) Worker Cannot Connect to Ollama (Common on Linux)
 
-- Mac/Windows：保持 `OLLAMA_BASE_URL=http://host.docker.internal:11434`
-- Linux：把 `host.docker.internal` 改为宿主机 IP 或网关 IP
-- 验证 worker 到 Ollama 的连通性（示例）：
+- Mac/Windows: Keep `OLLAMA_BASE_URL=http://host.docker.internal:11434`
+- Linux: Change `host.docker.internal` to the host IP or gateway IP
+- Verify worker connectivity to Ollama (Example):
 
 ```bash
 docker compose exec -T worker sh -lc 'python - << "PY"
