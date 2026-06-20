@@ -1,3 +1,8 @@
+<p align="center">
+  English 🇺🇸 / <a href="./README_zh.md">简体中文 🇨🇳</a>
+</p>
+
+---
 # AI Data Platform Mini - Label Studio Data Hub
 
 ## Project Overview
